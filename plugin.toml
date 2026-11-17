@@ -2,15 +2,17 @@
 # separately from the install prompt, and remembers the answer per package
 # name and source.
 #
-# Current requests are used by the Herdr integration:
+# Herdr uses env, run, and fs_read. ast-grep uses env and run. zai-local
+# uses env and net restricted to api.z.ai; it registers the provider below.
 #
-#   env:      maki.uv.os_getenv for HERDR_ENV, HERDR_BIN_PATH, HERDR_PANE_ID
-#   run:      maki.fn.jobstart to drive the herdr CLI
-#   fs_read:  reading <cwd>/.agents/agent_config.json for a configured
-#             herdr_link_start; nothing here writes files or touches the
-#             network.
+# ast-grep rewrites files through its subprocess, without Lua fs_write.
+
+min_maki_version = "0.7.0"
+providers = ["zai-local"]
 
 [permissions]
 env = true
 run = true
 fs_read = true
+net = true
+net_hosts = ["api.z.ai"]

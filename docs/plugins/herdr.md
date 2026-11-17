@@ -37,7 +37,9 @@ plugin.toml              collection-wide permission requests
 | `run` | driving the `herdr` CLI |
 | `fs_read` | reading `<cwd>/.agents/agent_config.json` for a configured `herdr_link_start` |
 
-No file writes and no network. Outside a Herdr-managed pane every Herdr module
+Herdr itself makes no file writes or network requests. The collection also
+requests capabilities for its other plugins; see the [shared manifest](../../README.md#permissions).
+Outside a Herdr-managed pane every Herdr module
 returns early, so this integration registers nothing and does nothing.
 
 ## Lifecycle reporting
