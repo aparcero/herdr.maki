@@ -1,21 +1,20 @@
-# herdr.maki
+# maki-plugins
 
-[Herdr](https://herdr.dev) integration for [maki](https://maki.sh), packaged as
-a maki Lua package.
+A collection of plugins for [Maki](https://maki.sh), installed as one Lua
+package. Herdr is the first integration; future plugins get their own entry
+files, module namespaces, and documentation in this repository.
 
-Two things, one per module:
-
-- **Lifecycle state reporting.** Herdr shows every pane's agent as `idle`,
-  `working`, or `blocked`. Instead of letting Herdr scrape maki's status bar,
-  this reports the real thing from maki's own event stream.
-- **herdr-link/1 gateway.** Cross-agent messaging, peer discovery, and agent
-  start/close, driven from inside a Herdr pane, plus a `/herdr` command.
+| Plugin | Purpose |
+| --- | --- |
+| [Herdr](docs/plugins/herdr.md) | Report agent status to Herdr, discover peers, exchange messages, and start or close agents |
 
 ## Install
 
+Add the collection to your global Maki `init.lua`:
+
 ```lua
 maki.pack.add({
-  { src = "https://github.com/calops/herdr.maki", version = "v1.0.0" },
+  { src = "https://github.com/aparcero/maki-plugins" },
 })
 ```
 
@@ -23,106 +22,67 @@ Maki shows the install prompt before the UI starts, then records the resolved
 commit in `pack-lock.json`. Commit that file to pin the revision on other
 machines. Permission requests in `plugin.toml` are approved separately.
 
+All plugins ship and update together. Each plugin controls when its integration
+activates; Herdr activates only inside a Herdr-managed pane.
+
+### Migrating from herdr.maki
+
+Replace the old `maki.pack.add` entry with the one above, rather than adding a
+second entry. Restart Maki to install the renamed package and approve its
+permissions. Maki associates approvals with the package name and source, so the
+new name requires a new approval. The Herdr tool and `/herdr` command keep their
+existing names.
+
 ## Layout
 
+```text
+plugin/
+  herdr.lua             Herdr entry point
+lua/
+  herdr/                Herdr modules
+docs/
+  plugins/
+    herdr.md            Herdr usage and design
+plugin.toml             Permissions requested by the collection
+README.md               Plugin catalog and package instructions
 ```
-plugin/herdr.lua         entry file; requires the modules below
-lua/herdr/cli.lua        environment gate + herdr CLI transport (shared)
-lua/herdr/lifecycle.lua  lifecycle state reporting
-lua/herdr/link.lua       herdr-link/1 gateway: `herdr_link` tool, /herdr
-lua/herdr/util.lua       two tiny helpers
-plugin.toml              permission requests
-```
+
+Maki loads the `plugin/*.lua` entry files and resolves modules under `lua/`.
+The entry files share a package environment. This follows Maki's native package
+layout while keeping each integration's code in its own namespace.
 
 ## Permissions
 
+Permissions apply to the whole collection. The current requests are all used
+by Herdr:
+
 | Permission | Used for |
 | --- | --- |
-| `env` | reading `HERDR_ENV`, `HERDR_BIN_PATH`, `HERDR_PANE_ID` |
-| `run` | driving the `herdr` CLI |
-| `fs_read` | reading `<cwd>/.agents/agent_config.json` for a configured `herdr_link_start` |
+| `env` | Reading `HERDR_ENV`, `HERDR_BIN_PATH`, and `HERDR_PANE_ID` |
+| `run` | Calling the `herdr` CLI |
+| `fs_read` | Reading `<cwd>/.agents/agent_config.json` for configured agent starts |
 
-No file writes and no network. Outside a Herdr-managed pane every module
-returns early, so the package registers nothing and does nothing.
+The collection currently requests no file-write or network permissions.
 
-## Lifecycle reporting
+## Adding a plugin
 
-| maki `SessionStatusChanged` | Herdr state |
-| --- | --- |
-| `working` | `working` |
-| `needs_input` | `blocked` |
-| `idle` | `idle` |
+1. Add a small `plugin/<name>.lua` entry file and keep its implementation in
+   `lua/<name>/`, using `require("<name>.<module>")` for its modules.
+2. Keep plugins independent. Use local variables, a distinct module namespace,
+   and unique tool and command names. An integration that requires a particular
+   environment should return early when that environment is absent.
+3. Document setup, behavior, and limitations in `docs/plugins/<name>.md`, then
+   add it to the catalog above.
+4. Declare any additional permissions in the shared `plugin.toml` and explain
+   their use here. Package revisions and releases cover the whole collection.
 
-Sent as `herdr pane report-agent --source custom:maki --agent maki`. A
-reporting source is authoritative: while it is live, Herdr does not also apply
-its screen manifest for that pane, so detection stops depending on the layout
-of the status bar, the permission dialog, or the plan-complete form.
-
-Notes on the design:
-
-- **One pane, one state.** A maki process can host several sessions and Herdr
-  tracks one agent per pane, so the reporter publishes the most demanding state
-  across live sessions: `blocked` beats `working` beats `idle`. A background
-  session waiting on input still marks the pane as blocked. When blocked, the
-  session's title travels along as `--message`.
-- **No `--seq`, deliberately.** Reports go through `herdr.cli.run`, which waits
-  for the CLI to exit, so one reporter cannot deliver its own reports out of
-  order. That also means no counter to persist across `/reload`.
-- **Coalesced.** Transitions are debounced by 250 ms, because a turn produces
-  several in a row.
-- **Release on teardown.** `SessionEnd` reasons `shutdown`, `reload`, `replaced`,
-  and `completed` mean the reporter is going away, so it releases the source's
-  authority. `reset`, `load`, and `delete` only end one session inside a maki
-  that keeps running, so the session is dropped and the state recomputed. The
-  release is best effort: a maki that exits is cleared by Herdr when the pane
-  occupant goes away, and a `/reload` republishes from the rebuilt host.
-- **Seeded at load.** Plugins only run at load, so the reporter seeds from
-  `maki.session.live()`. That is also what lets a `/reload` reclaim authority.
-
-### Verify it
-
-From inside the pane:
-
-```bash
-herdr agent list
-herdr agent explain --verbose
-```
-
-`agent explain` reports whether a live source took over or the screen manifest
-is still the authority (`fallback_reason`). Transitions are logged to `maki.log`
-in `maki.env.logs_dir()`.
-
-## herdr-link/1
-
-`lua/herdr/link.lua` is the cross-agent gateway. It registers one model-facing
-tool, `herdr_link`, which activates on first use and then dispatches by
-`action`:
-
-| Action | Effect |
-| --- | --- |
-| *(none)* | activate for this session and list capabilities |
-| `start` | start a Herdr agent with Link-managed placement |
-| `peers` | list live agents in the same workspace |
-| `send` | deliver an inter-agent message or an ordinary reply |
-| `close` | close a named agent's pane |
-
-`/herdr` shows the same view to a human: the agent's own name and its live
-workspace peers.
-
-## Not included
-
-Session restore. Herdr resumes panes by relaunching an agent with its native
-session id, and the launch/resume knowledge for that is per-agent code inside
-Herdr rather than something a reporter can supply. The `agent_session`
-reference can be reported with `pane report-agent-session`; this package does
-not report one.
+Keep user configuration, runtime state, and credentials outside this checkout.
 
 ## Development
 
-`/reload` rebuilds the plugin host in place, so an edit is live immediately:
+Edit the installed package's files, then run `/reload` in Maki to rebuild the
+plugin host. Edits in a separate checkout must first reach the installed copy.
+For the Herdr integration, follow its [verification steps](docs/plugins/herdr.md#verify-it).
 
-```bash
-maki                 # restart once to install a new package revision
-# then inside maki:
-/reload
-```
+See Maki's [package documentation](https://maki.sh/docs/packages/) for package
+loading, lockfiles, updates, and permissions.

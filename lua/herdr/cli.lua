@@ -1,7 +1,7 @@
 -- Herdr environment gate and CLI transport.
 --
--- Every module in this package requires this one. Outside a Herdr-managed pane
--- `enabled` is false, the caller returns early, and the package is a complete
+-- Every Herdr module requires this one. Outside a Herdr-managed pane
+-- `enabled` is false, the caller returns early, and the integration is a complete
 -- no-op.
 --
 -- Transport is argv arrays only, never a shell: nothing in an argument can be

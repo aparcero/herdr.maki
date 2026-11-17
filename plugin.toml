@@ -1,6 +1,8 @@
-# Permission requests for the Lua in this package. Maki asks about these
+# Permission requests for the maki-plugins collection. Maki asks about these
 # separately from the install prompt, and remembers the answer per package
 # name and source.
+#
+# Current requests are used by the Herdr integration:
 #
 #   env:      maki.uv.os_getenv for HERDR_ENV, HERDR_BIN_PATH, HERDR_PANE_ID
 #   run:      maki.fn.jobstart to drive the herdr CLI
